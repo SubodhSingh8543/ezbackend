@@ -20,4 +20,4 @@ pymongo==4.5.0
 python-dateutil==2.8.2
 python-dotenv==0.21.1
 six==1.16.0
-Werkzeug==2.3.7
+Werkzeug==2.2.3

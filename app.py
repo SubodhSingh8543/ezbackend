@@ -5,7 +5,7 @@ from bson import ObjectId
 from bson import ObjectId
 from flask_cors import CORS
 import bcrypt
-from jwt.exceptions import DecodeError
+# import jwt
 import os
 # DecodeError
 from dotenv import load_dotenv

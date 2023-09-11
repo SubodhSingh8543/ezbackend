@@ -5,8 +5,9 @@ from bson import ObjectId
 from bson import ObjectId
 from flask_cors import CORS
 import bcrypt
-import jwt
+from jwt import DecodeError
 import os
+# DecodeError
 from dotenv import load_dotenv
 from flask_jwt_extended import create_access_token, JWTManager, jwt_required, get_jwt_identity
 

@@ -1,19 +1,20 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file,Response
 from pymongo import MongoClient
 from pymongo import ASCENDING, DESCENDING
 from bson import ObjectId
 from flask_cors import CORS
+from werkzeug.utils import secure_filename
 import bcrypt
-# import jwt
 import os
-# DecodeError
+import io
+from gridfs import GridFS
 from dotenv import load_dotenv
 from flask_jwt_extended import create_access_token, JWTManager, jwt_required, get_jwt_identity
 
 app = Flask(__name__)
 CORS(app)
-app.config['SECRET_KEY'] = 'your_secret_key'  # Replace with a strong secret key
-app.config['JWT_SECRET_KEY'] = 'your_jwt_secret_key'  # Replace with another strong secret key
+app.config['SECRET_KEY'] = 'your_secret_key' 
+app.config['JWT_SECRET_KEY'] = 'your_jwt_secret_key'
 jwt = JWTManager(app)
 
 # Explicitly load the .env file
@@ -22,19 +23,15 @@ if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path)
 
 mongo_uri = os.environ.get('API_URL')
-# mongo_uri = "mongodb+srv://subodhsingh8543:ezproject@cluster0.xybezni.mongodb.net/?retryWrites=true&w=majority"
 
-
-client = MongoClient(mongo_uri)  # Use the correct variable here
+client = MongoClient(mongo_uri)  
 db = client['mydatabase']
 userCollection = db['users']
+clinteUserCollection = db['clinteUsers']
 pdf_collection = db["pdf_collection"]
 
-from werkzeug.utils import secure_filename
-import os
-
-UPLOAD_FOLDER = 'uploads'  # Define a folder to store uploaded files
-ALLOWED_EXTENSIONS = {'pdf'}  # Define allowed file extensions
+UPLOAD_FOLDER = 'uploads'  
+ALLOWED_EXTENSIONS = {'pdf'}  
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
@@ -42,16 +39,26 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# Route for downloading a file
-@app.route('/download/<filename>', methods=['GET'])
-def download_file(filename):
-    # Check if the requested file exists
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    if not os.path.isfile(file_path):
-        return jsonify({'error': 'File not found'})
+# route for downloading file
+pdf_fs = GridFS(db, collection='pdf_collection')
 
-    # Use Flask's send_file function to send the file for download
-    return send_file(file_path, as_attachment=True)
+@app.route('/download_pdf/<pdf_id>', methods=['GET'])
+def download_pdf(pdf_id):
+    try:
+        pdf_document = pdf_collection.find_one({'_id': ObjectId(pdf_id)})
+
+        if pdf_document:
+            pdf_data = pdf_document["pdf_data"]
+            filename = pdf_document["filename"]
+            response = Response(io.BytesIO(pdf_data))
+            response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+            return response
+        else:
+            return 'PDF not found', 404
+
+    except Exception as e:
+        print(str(e))
+        return 'Internal Server Error', 500
 
 # Route for uploading a PDF file
 @app.route('/upload', methods=['POST'])
@@ -67,8 +74,6 @@ def upload_file():
     if file and allowed_file(file.filename):
         filename = secure_filename(file.filename)
         file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-
-        # Save file to MongoDB
         with open(os.path.join(app.config['UPLOAD_FOLDER'], filename), 'rb') as pdf_file:
             pdf_data = pdf_file.read()
             pdf_collection.insert_one({'filename': filename, 'pdf_data': pdf_data})
@@ -77,17 +82,7 @@ def upload_file():
 
     return jsonify({'error': 'Invalid file type'})
 
-
-
-# upload data
-# @app.route('/upload', methods=['POST'])
-# @jwt_required()
-# def add_data():
-#     user_id = get_jwt_identity()
-#     return jsonify({'id': user_id})
-
-
-# Route for adding data
+# Route for adding operator data
 @app.route('/users', methods=['POST'])
 def add_user():
     data = request.get_json()
@@ -102,23 +97,66 @@ def add_user():
 
     return jsonify({'id': str(result.inserted_id)})
 
-# Route for user login
+# Route for operator login 
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
     username = data['email']
     password = data['password']
-
-    # Retrieve the user document from the database based on the provided username
+ 
     user = userCollection.find_one({'email': username})
     
     if user and bcrypt.checkpw(password.encode('utf-8'), user['password'].encode('utf-8')):
-        # If the username and password are valid, generate a JWT token
         access_token = create_access_token(identity=str(user['_id']))
         
         return jsonify({'access_token': access_token})
     
     return jsonify({'message': 'Invalid username or password'}), 401
+
+# Route for signup clinte user
+@app.route('/clintesignup', methods=['POST'])
+def add_clinteuser():
+    data = request.get_json()
+
+    password = data['password']
+    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt(rounds=5))
+    data['password'] = hashed_password.decode('utf-8')
+    
+    document = data
+
+    result = clinteUserCollection.insert_one(document)
+
+    return jsonify({'id': str(result.inserted_id)})
+
+# Route for login clinte user
+@app.route('/clintelogin', methods=['POST'])
+def clintelogin():
+    data = request.get_json()
+    username = data['email']
+    password = data['password']
+ 
+    user = clinteUserCollection.find_one({'email': username})
+    
+    if user and bcrypt.checkpw(password.encode('utf-8'), user['password'].encode('utf-8')):
+        access_token = create_access_token(identity=str(user['_id']))
+        
+        return jsonify({'access_token': access_token})
+    
+    return jsonify({'message': 'Invalid username or password'}), 401
+
+# route for getting all files
+@app.route('/get_pdf_data', methods=['GET'])
+def get_pdf_data():
+    pdf_data = list(pdf_collection.find())
+
+    pdf_list = []
+    for items in pdf_data:
+        pdf_list.append({
+            'id': str(items['_id']),
+            'filename': items['filename'],
+        })
+
+    return jsonify(pdf_list)
 
 if __name__ == '__main__':
     app.run(port=11000)

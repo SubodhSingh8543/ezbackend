@@ -28,6 +28,7 @@ mongo_uri = os.environ.get('API_URL')
 client = MongoClient(mongo_uri)  # Use the correct variable here
 db = client['mydatabase']
 userCollection = db['users']
+pdf_collection = db["pdf_collection"]
 
 from werkzeug.utils import secure_filename
 import os
@@ -40,6 +41,17 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 # Function to check if a filename has a valid extension
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# Route for downloading a file
+@app.route('/download/<filename>', methods=['GET'])
+def download_file(filename):
+    # Check if the requested file exists
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    if not os.path.isfile(file_path):
+        return jsonify({'error': 'File not found'})
+
+    # Use Flask's send_file function to send the file for download
+    return send_file(file_path, as_attachment=True)
 
 # Route for uploading a PDF file
 @app.route('/upload', methods=['POST'])
@@ -59,7 +71,7 @@ def upload_file():
         # Save file to MongoDB
         with open(os.path.join(app.config['UPLOAD_FOLDER'], filename), 'rb') as pdf_file:
             pdf_data = pdf_file.read()
-            db.pdf_collection.insert_one({'filename': filename, 'pdf_data': pdf_data})
+            pdf_collection.insert_one({'filename': filename, 'pdf_data': pdf_data})
 
         return jsonify({'message': 'File uploaded successfully'})
 
